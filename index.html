@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>短网址还原</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;padding:116px 16px 16px;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+     background:#f5f6f8;color:#222;font-size:15px;line-height:1.6}
+.wrap{max-width:520px;margin:0 auto}
+h1{font-size:18px;margin:0 0 4px;font-weight:600}
+.sub{color:#888;font-size:12px;margin-bottom:14px}
+.card{background:#fff;border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+label{display:block;font-size:13px;color:#555;margin-bottom:6px;font-weight:500}
+textarea{width:100%;padding:10px 12px;border:1px solid #e0e0e0;border-radius:8px;
+     font-size:15px;font-family:inherit;background:#fafafa;outline:none;resize:vertical;
+     min-height:76px;word-break:break-all}
+textarea:focus{border-color:#0d9488;background:#fff}
+.row{display:flex;gap:10px}
+.row>*{flex:1}
+button.main{width:100%;padding:13px;border:0;border-radius:10px;font-size:16px;font-weight:600;
+      background:#0d9488;color:#fff;margin-top:10px}
+button.main:active{background:#0b7a70}
+button.ghost{background:#eef2f1;color:#0d9488;font-size:15px;padding:11px;border:0;border-radius:10px;font-weight:600}
+.out{word-break:break-all;font-size:13px;color:#0d9488;background:#f0fdfa;border-radius:8px;
+     padding:12px;margin-top:10px;font-family:ui-monospace,Menlo,monospace;user-select:all;
+     border:1px dashed #99f6e4;display:none;white-space:pre-wrap}
+.err{color:#b45309;background:#fff7ed;border-color:#fed7aa}
+.tip{font-size:12px;color:#999;margin-top:8px;text-align:center}
+.warn{font-size:12px;color:#b45309;background:#fff7ed;border-radius:8px;padding:10px;margin-top:10px}
+.hist div{padding:8px 0;border-bottom:1px solid #f0f0f0;word-break:break-all;cursor:pointer;font-size:12px;color:#666}
+.hist div:last-child{border:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>短网址还原</h1>
+  <div class="sub">输入短链 → 还原出原始网址</div>
+
+  <div class="card">
+    <label>短网址</label>
+    <textarea id="shortIn" placeholder="粘贴短链，如 https://9lnk.io/0sNI"></textarea>
+    <button class="main" onclick="doRestore()">还 原</button>
+
+    <div class="out" id="longOut"></div>
+    <div class="row" style="margin-top:10px;display:none" id="ops">
+      <button class="ghost" onclick="copyText(document.getElementById('longOut').textContent)">复制</button>
+      <button class="ghost" onclick="openUrl(document.getElementById('longOut').textContent)">打开</button>
+    </div>
+  </div>
+
+  <div class="card" id="histCard" style="display:none">
+    <div style="font-size:13px;color:#555;font-weight:500;margin-bottom:4px">最近还原</div>
+    <div class="hist" id="histList"></div>
+  </div>
+
+  <div class="warn">交流群:518323228</div>
+</div>
+
+<script>
+var HISTORY = [];
+
+function jsonp(url, cb){
+  var name = 'jp_' + Date.now() + '_' + Math.floor(Math.random()*1000);
+  var s = document.createElement('script');
+  var done = false;
+
+  window[name] = function(data){ done = true; cleanup(); cb(null, data); };
+
+  function cleanup(){
+    try{ delete window[name]; }catch(e){ window[name] = undefined; }
+    if (s.parentNode) s.parentNode.removeChild(s);
+  }
+  s.onerror = function(){ if(done) return; done=true; cleanup(); cb(new Error('请求失败')); };
+  setTimeout(function(){ if(done) return; done=true; cleanup(); cb(new Error('请求超时')); }, 8000);
+
+  s.src = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'callback=' + name;
+  document.body.appendChild(s);
+}
+
+function doRestore(){
+  var url = document.getElementById('shortIn').value.trim();
+  var out = document.getElementById('longOut');
+  var ops = document.getElementById('ops');
+
+  if(!/^https?:\/\//i.test(url)){
+    out.style.display='block';
+    out.className='out err';
+    out.textContent='请输入有效的正确的网址';
+    ops.style.display='none';
+    return;
+  }
+
+  out.style.display='block';
+  out.className='out';
+  out.textContent='还原中…';
+  ops.style.display='none';
+
+  var api = 'https://api2.jlwz.cn/jsonp/hy.php?url=' + encodeURIComponent(url);
+  jsonp(api, function(err, res){
+    if(err){
+      out.className='out err';
+      out.textContent='还原失败：' + err.message;
+      return;
+    }
+    var longUrl = res && (res.long_url || (res[0] && res[0].long_url));
+    if(!longUrl){
+      out.className='out err';
+      out.textContent='接口未返回结果';
+      return;
+    }
+    longUrl = String(longUrl).replace(/[\r\n]+$/,'').trim();
+
+    if(!/^https?:\/\//i.test(longUrl)){
+      out.className='out err';
+      out.textContent = longUrl + '\n（该接口只解析 d.4rxb.com 自家短链，不支持 t.cn 等其他短链）';
+      return;
+    }
+
+    out.textContent = longUrl;
+    ops.style.display='flex';
+    addHistory(url, longUrl);
+  });
+}
+
+function addHistory(a, b){
+  HISTORY.unshift([a, b]);
+  if(HISTORY.length > 5) HISTORY.pop();
+  document.getElementById('histCard').style.display = 'block';
+  var list = document.getElementById('histList');
+  list.innerHTML = '';
+  HISTORY.forEach(function(item){
+    var d = document.createElement('div');
+    d.textContent = item[1];
+    d.onclick = function(){ document.getElementById('shortIn').value = item[0]; };
+    list.appendChild(d);
+  });
+}
+
+function copyText(t){
+  if(!t) return;
+  var done = function(){ alert('已复制'); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(done, fb);
+  } else fb();
+  function fb(){
+    var ta=document.createElement('textarea');
+    ta.value=t; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ alert('复制失败，请长按选择'); }
+    document.body.removeChild(ta);
+  }
+}
+
+function openUrl(u){
+  if(!u || !/^https?:\/\//i.test(u)) return;
+  window.open(u, '_blank');
+}
+
+document.getElementById('shortIn').addEventListener('keydown', function(e){
+  if (e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); doRestore(); }
+});
+</script>
+</body>
+</html>
